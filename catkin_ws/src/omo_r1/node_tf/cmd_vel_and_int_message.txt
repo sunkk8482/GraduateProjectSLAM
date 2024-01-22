@@ -1,0 +1,156 @@
+
+
+
+#include <ros.h>
+#include <geometry_msgs/Twist.h>
+#include <std_msgs/String.h>
+#include <std_msgs/Int32.h>
+#include "math.h"
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel RGB_LED = Adafruit_NeoPixel(25, 13, NEO_GRB);
+
+ros::NodeHandle nh;
+
+float linear_vel = 0.0;
+float angular_vel = 0.0;
+unsigned long last_cmd_vel = 0;
+
+//right
+int Dir1Pin_A=5;
+int Dir2Pin_A=4;
+int SpeedPin_A=10;
+
+//left
+int Dir1Pin_B=2;
+int Dir2Pin_B=3;
+int SpeedPin_B=9;
+
+int setspeed = 0;
+
+float left_speed = 0;
+float right_speed = 0;
+int left_direction = 0;
+int right_direction = 0;
+
+int minspeed=220;
+int maxspeed=250;
+
+int flag=0;
+
+void cmd_vel_cb(const geometry_msgs::Twist& msg){
+  linear_vel = msg.linear.x;
+  angular_vel = msg.angular.z;
+  last_cmd_vel = millis();
+
+  // Convert velocity to motor speed and direction
+  left_speed = linear_vel - angular_vel;
+  right_speed = linear_vel + angular_vel;
+  left_direction = (left_speed >= 0) ? HIGH : LOW;
+  right_direction = (right_speed >= 0) ? HIGH : LOW;
+  
+  // map motor speeds to range 230-255
+   if (left_speed != 0 ) {
+     left_speed = (int) (linear_vel - angular_vel) * 127;
+     left_speed = map(left_speed, (-127), (127), minspeed, maxspeed);
+
+     if(left_speed<minspeed) left_speed=minspeed;
+     if(left_speed>maxspeed) left_speed=maxspeed;
+   }
+   if (right_speed != 0) {
+     right_speed = (int) (linear_vel + angular_vel) * 127;
+     right_speed = map(right_speed, (-127), (127), minspeed,maxspeed);
+
+     if(right_speed<minspeed) right_speed=minspeed;
+     if(right_speed>maxspeed) right_speed=maxspeed;
+   }
+
+   
+
+ 
+}
+
+void callback(const std_msgs::Int32& msg) {
+
+  if(flag==msg.data) return;
+  else flag=msg.data;
+  
+  if(msg.data==1) { //red
+      for (int i = 0; i < RGB_LED.numPixels(); i++) {
+        RGB_LED.setPixelColor(i, RGB_LED.Color(255, 0, 0));
+      }
+      RGB_LED.show();
+  }
+  else if(msg.data==2) { //blue
+      for (int i = 0; i < RGB_LED.numPixels(); i++) {
+        RGB_LED.setPixelColor(i, RGB_LED.Color(0, 0, 255));
+      }
+      RGB_LED.show();
+  }
+  else if(msg.data==3) { //blue_blink
+    for(int i = 0 ; i < 4 ; i++){
+      for (int j = 0; j < RGB_LED.numPixels(); j++) {
+        RGB_LED.setPixelColor(j, RGB_LED.Color(0, 0, 255));
+      }
+      RGB_LED.show();
+      delay(500);
+      
+      for (int k = 0; k < RGB_LED.numPixels(); k++) {
+        RGB_LED.setPixelColor(k, RGB_LED.Color(0, 0, 0));
+      }
+      RGB_LED.show();
+      delay(500);
+    }
+  }
+
+}
+
+
+ros::Subscriber<geometry_msgs::Twist> sub1("/cmd_vel", &cmd_vel_cb);
+ros::Subscriber<std_msgs::Int32> sub2("my_topic", &callback);
+
+void setup() {
+  pinMode(Dir1Pin_A, OUTPUT);
+  pinMode(Dir2Pin_A, OUTPUT);
+  pinMode(SpeedPin_A, OUTPUT);
+  pinMode(Dir1Pin_B, OUTPUT);
+  pinMode(Dir2Pin_B, OUTPUT);
+  pinMode(SpeedPin_B, OUTPUT);
+
+  RGB_LED.begin();            // RGB_LED 불러옵니다.
+  RGB_LED.setBrightness(100); // RGB_LED 밝기조절
+  RGB_LED.clear();  
+
+
+  for (int i = 0; i < RGB_LED.numPixels(); i++) {
+      RGB_LED.setPixelColor(i, RGB_LED.Color(0, 0, 0));
+  }
+  RGB_LED.show();
+
+  nh.getHardware()->setBaud(115200);
+  nh.initNode();
+  nh.subscribe(sub1);
+  nh.subscribe(sub2);
+}
+
+void loop() {
+  nh.spinOnce();
+
+  // Stop the motors if no velocity command is received
+  if (nh.connected() && millis() - last_cmd_vel > 500) {
+    left_speed=0;
+    right_speed=0;
+  }
+
+  
+
+  // Set motor speed and direction
+  digitalWrite(Dir1Pin_A, !right_direction);
+  digitalWrite(Dir2Pin_A, right_direction);
+  analogWrite(SpeedPin_A, right_speed);
+  
+  digitalWrite(Dir1Pin_B, !left_direction);
+  digitalWrite(Dir2Pin_B, left_direction);
+  analogWrite(SpeedPin_B, left_speed);
+
+  
+}
